@@ -1,0 +1,114 @@
+import pygame
+import random
+import math
+import cv2
+import numpy as np
+
+# Inicializar pygame y configurar la ventana de visualización.
+pygame.init()
+width, height = 800, 600
+screen = pygame.display.set_mode((width, height))
+clock = pygame.time.Clock()
+
+# Configurar la grabación de video para documentar la animación del grafo.
+fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+video = cv2.VideoWriter('graph_animation.mp4', fourcc, 30.0, (width, height))
+
+def get_rainbow_color(index, total):
+    """Calcula un color del arcoíris basándose en la posición del nodo en el grafo."""
+    color = pygame.Color(0, 0, 0)
+    color.hsva = (index / total * 360, 100, 100, 100)
+    return color
+
+class Vertex:
+    """Representa un vértice en el grafo."""
+    def __init__(self, x, y, index, total):
+        self.x = x
+        self.y = y
+        self.vx = 0
+        self.vy = 0
+        self.color = get_rainbow_color(index, total)
+
+class Edge:
+    """Representa una arista que conecta dos vértices."""
+    def __init__(self, start, end):
+        self.start = start
+        self.end = end
+
+def create_dorogovtsev_mendes(n):
+    """Genera un grafo de Dorogovtsev-Mendes con 'n' nodos."""
+    vertices = [Vertex(random.randint(50, width-50), random.randint(50, height-50), 0, n) for _ in range(3)]
+    edges = [Edge(vertices[0], vertices[1]), Edge(vertices[1], vertices[2]), Edge(vertices[2], vertices[0])]
+    for i in range(3, n):
+        a = random.choice(edges)
+        new_vertex = Vertex(random.randint(50, width-50), random.randint(50, height-50), i, n)
+        vertices.append(new_vertex)
+        edges.append(Edge(new_vertex, a.start))
+        edges.append(Edge(new_vertex, a.end))
+    return vertices, edges
+
+vertices, edges = create_dorogovtsev_mendes(100)
+
+def apply_forces():
+    """Aplica fuerzas de repulsión entre vértices y de atracción en las aristas para modelar el grafo."""
+    repulsion_constant = 150
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            dx = vertices[i].x - vertices[j].x
+            dy = vertices[i].y - vertices[j].y
+            distance = math.sqrt(dx**2 + dy**2) + 0.1
+            force = repulsion_constant / distance**2
+            move_x, move_y = dx / distance * force, dy / distance * force
+            vertices[i].vx += move_x
+            vertices[i].vy += move_y
+            vertices[j].vx -= move_x
+            vertices[j].vy -= move_y
+
+    spring_constant = 0.1
+    preferred_length = 50
+    for edge in edges:
+        dx = edge.start.x - edge.end.x
+        dy = edge.start.y - edge.end.y
+        distance = math.sqrt(dx**2 + dy**2)
+        force = spring_constant * (distance - preferred_length)
+        move_x, move_y = dx / distance * force, dy / distance * force
+        edge.start.vx -= move_x
+        edge.start.vy -= move_y
+        edge.end.vx += move_x
+        edge.end.vy += move_y
+
+# Bucle principal que maneja eventos y actualiza la pantalla.
+running = True
+start_time = pygame.time.get_ticks()
+while running and (pygame.time.get_ticks() - start_time < 20000):
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+    apply_forces()
+
+    # Actualizar posiciones de los vértices.
+    for vertex in vertices:
+        vertex.x += vertex.vx
+        vertex.y += vertex.vy
+        vertex.vx *= 0.85  # Amortiguación de la velocidad
+        vertex.vy *= 0.85
+
+    screen.fill((255, 255, 255))  # Limpiar la pantalla para el nuevo frame.
+
+    # Dibujar aristas y vértices.
+    for edge in edges:
+        pygame.draw.line(screen, (255, 0, 0), (int(edge.start.x), int(edge.start.y)), (int(edge.end.x), int(edge.end.y)), 2)
+    for vertex in vertices:
+        pygame.draw.circle(screen, vertex.color, (int(vertex.x), int(vertex.y)), 10)
+
+    pygame.display.flip()  # Actualizar la pantalla.
+    clock.tick(30)  # Mantener el programa corriendo a 30 FPS.
+
+    # Grabar el cuadro actual.
+    frame = pygame.surfarray.array3d(pygame.display.get_surface())
+    frame = frame.transpose([1, 0, 2])
+    video.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
+
+video.release()  # Finalizar la grabación del video
+pygame.quit()  # Cerrar pygame
